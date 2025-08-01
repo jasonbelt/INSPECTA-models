@@ -44,4 +44,36 @@ ${TOP_BUILD_DIR}/Makefile: $(SYSTEM_MAKEFILE)
 	cp $(SYSTEM_MAKEFILE) ${TOP_BUILD_DIR}/Makefile
 
 
+ifdef AM_REPOS_ROOT
+CVM_EXE_PATH := $(AM_REPOS_ROOT)/cvm/_build/install/default/bin/cvm
+else
+$(error "ERROR:  AM_REPOS_ROOT environment variable not set!")
+endif
+
+# Variables used in make targets to configure various clients
+#RODEO_REQUESTS_DIR=$(AM_REPOS_ROOT)/rust-am-clients/rodeo_configs/rodeo_requests/
+RODEO_ENVS_DIR=$(AM_REPOS_ROOT)/rust-am-clients/rodeo_configs/rodeo_envs/
+
+#rodeo_client_hamr:
+#	cargo run --release --bin rust-rodeo-client -- -c $(CVM_EXE_PATH) \
+#		-r $(RODEO_REQUESTS_DIR)concrete_requests/req_rodeo_micro_concrete.json \
+#		-e $(RODEO_ENVS_DIR)env_rodeo_micro.json 2> /dev/null
+
+#rodeo_client_hamr_verbose:
+#	cargo run --release --bin rust-rodeo-client -- -c $(CVM_EXE_PATH) \
+#		-r $(RODEO_REQUESTS_DIR)concrete_requests/req_rodeo_micro_concrete.json \
+#		-e $(RODEO_ENVS_DIR)env_rodeo_micro.json
+
+provision:
+	cd $(AM_REPOS_ROOT)/rust-am-clients && \
+	cargo run --release --bin rust-rodeo-client -- -c $(CVM_EXE_PATH) \
+		-r $(TOP_DIR)/attestation/provision.json \
+		-e $(RODEO_ENVS_DIR)env_rodeo_micro_provision.json
+
+#rodeo_client_hamr_provision_verbose:
+#	cargo run --release --bin rust-rodeo-client -- -c $(CVM_EXE_PATH) \
+#		-r $(RODEO_REQUESTS_DIR)concrete_requests/req_rodeo_micro_provision_concrete.json \
+#		-e $(RODEO_ENVS_DIR)env_rodeo_micro_provision.json
+
+
 FORCE:

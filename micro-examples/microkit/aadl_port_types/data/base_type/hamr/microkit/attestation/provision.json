@@ -1,0 +1,42 @@
+{
+    "RodeoClientRequest_attest_id": "micro_provision_protocol",
+    "RodeoClientRequest_attest_args": {
+        "hashdir": {
+            "aadl_dir_targ": {
+                "env_var": "",
+                "paths": ["/home/microkit/provers/INSPECTA-models/micro-examples/microkit/aadl_port_types/data/base_type/aadl/"],
+                "omit_file_suffixes": [],
+                "recursive": false,
+                "env_var_golden": "",
+                "filepath_golden": ""
+            },
+            "microkit_dir_targ": {
+                "env_var": "",
+                "paths": ["/home/microkit/provers/INSPECTA-models/micro-examples/microkit/aadl_port_types/data/base_type/hamr/microkit/"],
+                "omit_file_suffixes": [],
+                "recursive": false,
+                "env_var_golden": "",
+                "filepath_golden": ""
+            }
+        },
+        "provision": {
+            "provision_aadl_targ": {
+                "env_var": "",
+                "paths": [],
+                "omit_file_suffixes": [],
+                "recursive": false,
+                "env_var_golden": "",
+                "filepath_golden": "/home/microkit/provers/INSPECTA-models/micro-examples/microkit/aadl_port_types/data/base_type/hamr/microkit/attestation/micro_dir_1_golden.txt"
+            },
+            "provision_microkit_targ": {
+                "env_var": "",
+                "paths": [],
+                "omit_file_suffixes": [],
+                "recursive": false,
+                "env_var_golden": "",
+                "filepath_golden": "/home/microkit/provers/INSPECTA-models/micro-examples/microkit/aadl_port_types/data/base_type/hamr/microkit/attestation/micro_dir_2_golden.txt"
+            }
+        }
+
+    }
+}   
