@@ -67,13 +67,15 @@ jobs:
           export AM_REPOS_ROOT=${PROVERS_HOME}/am
           
           rm -rf ${PROVERS_DIR}/Sireum # remove bootstrap version
-          export SIREUM_HOME=$(pwd)/Sireum
+          #export SIREUM_HOME=$(pwd)/Sireum
+          export SIREUM_HOME=$(pwd)/SireumX
           export PATH=${SIREUM_HOME}/bin:${PATH}
           
-          //${SIREUM_HOME}/bin/build.cmd setup
-          //rm -rf ${SIREUM_HOME}/out
-          rm -rf $SIREUM_HOME
+          #${SIREUM_HOME}/bin/build.cmd setup
+          #rm -rf ${SIREUM_HOME}/out
+          #rm -rf $SIREUM_HOME
           (DIR=Sireum && export SIREUM_V=master && rm -fR $DIR && mkdir -p $DIR/bin && cd $DIR/bin && curl -JLso init.sh https://raw.githubusercontent.com/sireum/kekinian/$SIREUM_V/bin/init.sh && bash init.sh)
+          mv $(pwd)/Sireum/bin/linux/fmide $SIREUM_HOME/bin/linux/
           rm -rf $SIREUM_HOME/bin/sireum.jar
           wget -P $SIREUM_HOME/bin/sireum.jar https://github.com/jasonbelt/x/raw/refs/heads/main/sireum.jar
           
