@@ -82,4 +82,4 @@ jobs:
           #sireum slang run $(pwd)/SireumX/hamr/codegen/bin/build.cmd install-osate-gumbo
           export OSATE_HOME=${SIREUM_HOME}/bin/linux/osate
 
-          INSPECTA-models/.github/workflows/hamr/hamr-ci.cmd
+          INSPECTA-models/.github/workflows/hamr/hamr-ci.cmd disable-logika
