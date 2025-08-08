@@ -76,7 +76,7 @@ jobs:
           (DIR=Sireum && export SIREUM_V=master && rm -fR $DIR && mkdir -p $DIR/bin && cd $DIR/bin && curl -JLso init.sh https://raw.githubusercontent.com/sireum/kekinian/$SIREUM_V/bin/init.sh && bash init.sh)
           mv $(pwd)/SireumX/bin/linux/osate $SIREUM_HOME/bin/linux/
           rm -rf $SIREUM_HOME/bin/sireum.jar
-          curl -o $SIREUM_HOME/bin/sireum.jar https://github.com/jasonbelt/x/raw/refs/heads/main/sireum.jar
+          curl -L -o $SIREUM_HOME/bin/sireum.jar https://github.com/jasonbelt/x/raw/refs/heads/main/sireum.jar
           
           sireum -v
 
