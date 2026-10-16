@@ -1,0 +1,164 @@
+name: provers-env-docker
+
+# Builds the provers-env container image (provers-env/docker/Dockerfile.provers) for
+# both architectures, each natively on its own runner -- no QEMU, so the arm64 half,
+# which compiles Z3 and Verus from source, is not the slow one it is under docker.sh
+# on a single host.  It runs the same build docker.sh does: the image name, the tag
+# and every --build-arg come from provers-env/bin/versions.sh.
+#
+# Publishing is opt-in.  A push that touches provers-env/ only builds and smoke-tests
+# the images; a manual run with 'publish' set pushes <image>:<arch>_<version> for
+# both architectures and then points <image>:<version> and <image>:latest at a
+# multi-arch manifest of the two, as docker.sh does after its prompt.  Publishing
+# needs the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Push both images and update the <version> and latest manifests'
+        type: boolean
+        default: false
+      build_ver:
+        description: 'PROVERS_BUILD_VER override (default: the pin in versions.sh)'
+        type: string
+        default: ''
+      image:
+        description: 'PROVERS_IMAGE override (default: the image versions.sh names)'
+        type: string
+        default: ''
+  push:
+    paths:
+      - 'provers-env/bin/**'
+      - 'provers-env/docker/**'
+      - '.github/workflows/provers-env-docker.yml'
+
+# a newer run on the same ref replaces one in progress: each build holds a runner for
+# an hour or more, and only the latest pins are worth building
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
+
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    outputs:
+      image: ${{ steps.pins.outputs.image }}
+      version: ${{ steps.pins.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make room for the build
+        # The builder stage holds a Sireum build, Rust, and on arm64 the Z3 and Verus
+        # source builds, and its layers stay in the Docker store beside the ~8GB final
+        # image.  The runner image ships tens of GB of SDKs nothing here uses, and
+        # where it mounts a larger scratch disk at /mnt, Docker's store moves there.
+        run: |
+          df -h / /mnt 2>/dev/null || df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+                      /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          sudo docker system prune -af > /dev/null
+          root_free=$(df --output=avail -k / | tail -1)
+          mnt_free=$( (df --output=avail -k /mnt 2>/dev/null || echo 0) | tail -1)
+          if [ "${mnt_free}" -gt "${root_free}" ]; then
+            sudo systemctl stop docker docker.socket
+            sudo mkdir -p /mnt/docker
+            echo '{ "data-root": "/mnt/docker" }' | sudo tee /etc/docker/daemon.json
+            sudo systemctl start docker
+            echo "Docker's store moved to /mnt/docker"
+          fi
+          df -h / /mnt 2>/dev/null || df -h /
+
+      - name: Read the pins
+        id: pins
+        # Only the architecture-independent pins are passed as build args, as in
+        # docker.sh; the per-architecture values are derived again inside the image.
+        env:
+          BUILD_VER_OVERRIDE: ${{ inputs.build_ver }}
+          IMAGE_OVERRIDE: ${{ inputs.image }}
+        run: |
+          [ -n "${BUILD_VER_OVERRIDE}" ] && export PROVERS_BUILD_VER="${BUILD_VER_OVERRIDE}"
+          [ -n "${IMAGE_OVERRIDE}" ] && export PROVERS_IMAGE="${IMAGE_OVERRIDE}"
+          source provers-env/bin/versions.sh
+          args=()
+          for v in MICROKIT_SDK_VER RUST_TOOLCHAIN_VER \
+                   SDFGEN_VER VERUS_VER Z3_VER LIONSOS_VER \
+                   SIREUM_V SIREUM_INIT_V PROVERS_BUILD_VER; do
+            args+=("--build-arg ${v}=${!v}")
+          done
+          {
+            echo "image=${PROVERS_IMAGE}"
+            echo "version=${PROVERS_BUILD_VER}"
+            echo "tag=${PROVERS_IMAGE}:${{ matrix.arch }}_${PROVERS_BUILD_VER}"
+            echo "build_args=${args[*]}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building ${PROVERS_IMAGE}:${{ matrix.arch }}_${PROVERS_BUILD_VER} with:"
+          printf '  %s\n' "${args[@]}"
+
+      - name: Build
+        # Docker's own builder rather than a buildx container, so the image lands in
+        # the store it is smoke-tested and pushed from instead of being exported into
+        # it, which would hold it on disk twice.
+        run: |
+          docker buildx build --platform linux/${{ matrix.arch }} \
+            -f provers-env/docker/Dockerfile.provers \
+            -t "${{ steps.pins.outputs.tag }}" \
+            ${{ steps.pins.outputs.build_args }} \
+            provers-env
+          df -h / /mnt 2>/dev/null || df -h /
+
+      - name: Smoke test
+        # the image's ENV puts the tools on PATH without a login shell
+        run: |
+          tag="${{ steps.pins.outputs.tag }}"
+          docker run --rm "${tag}" cat provers/build-info
+          docker run --rm "${tag}" verus --version
+          docker run --rm "${tag}" sireum --version
+          docker run --rm "${tag}" bash -c 'ls "${MICROKIT_SDK}/board"'
+
+      - name: Log in to Docker Hub
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push
+        if: env.PUBLISH == 'true'
+        run: docker push "${{ steps.pins.outputs.tag }}"
+
+  manifest:
+    # Only after both architectures have pushed: the manifest names the two tags,
+    # wherever they were built.
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Publish the multi-arch manifest
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          docker buildx imagetools create -t "${IMAGE}:${VERSION}" \
+            "${IMAGE}:arm64_${VERSION}" "${IMAGE}:amd64_${VERSION}"
+          docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${VERSION}"
+          docker buildx imagetools inspect "${IMAGE}:${VERSION}"
