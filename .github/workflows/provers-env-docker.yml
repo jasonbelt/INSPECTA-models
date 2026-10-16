@@ -3,8 +3,7 @@ name: provers-env-docker
 # Builds the provers-env container image (provers-env/docker/Dockerfile.provers) for
 # both architectures, each natively on its own runner -- no QEMU, so the arm64 half,
 # which compiles Z3 and Verus from source, is not the slow one it is under docker.sh
-# on a single host.  It runs the same build docker.sh does: the image name, the tag
-# and every --build-arg come from provers-env/bin/versions.sh.
+# on a single host.  The build is docker.sh itself, run once per architecture.
 #
 # It runs when started by hand, or on a push one of whose commit messages contains
 # [docker].  Without 'publish' -- which a push never sets -- it builds and smoke-tests
@@ -43,6 +42,9 @@ env:
   PUBLISH: ${{ inputs.publish }}
 
 jobs:
+  # Everything about the build itself -- the image name, the tag, the build args from
+  # provers-env/bin/versions.sh, the smoke test, the push and the manifests -- is
+  # provers-env/docker/docker.sh; this workflow only chooses where it runs.
   build:
     name: build (${{ matrix.arch }})
     if: github.event_name == 'workflow_dispatch' || contains(join(github.event.commits.*.message, ' '), '[docker]')
@@ -56,9 +58,6 @@ jobs:
             runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
-    outputs:
-      image: ${{ steps.pins.outputs.image }}
-      version: ${{ steps.pins.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -83,53 +82,6 @@ jobs:
           fi
           df -h / /mnt 2>/dev/null || df -h /
 
-      - name: Read the pins
-        id: pins
-        # Only the architecture-independent pins are passed as build args, as in
-        # docker.sh; the per-architecture values are derived again inside the image.
-        env:
-          BUILD_VER_OVERRIDE: ${{ inputs.build_ver }}
-          IMAGE_OVERRIDE: ${{ inputs.image }}
-        run: |
-          [ -n "${BUILD_VER_OVERRIDE}" ] && export PROVERS_BUILD_VER="${BUILD_VER_OVERRIDE}"
-          [ -n "${IMAGE_OVERRIDE}" ] && export PROVERS_IMAGE="${IMAGE_OVERRIDE}"
-          source provers-env/bin/versions.sh
-          args=()
-          for v in MICROKIT_SDK_VER RUST_TOOLCHAIN_VER \
-                   SDFGEN_VER VERUS_VER Z3_VER LIONSOS_VER \
-                   SIREUM_V SIREUM_INIT_V PROVERS_BUILD_VER; do
-            args+=("--build-arg ${v}=${!v}")
-          done
-          {
-            echo "image=${PROVERS_IMAGE}"
-            echo "version=${PROVERS_BUILD_VER}"
-            echo "tag=${PROVERS_IMAGE}:${{ matrix.arch }}_${PROVERS_BUILD_VER}"
-            echo "build_args=${args[*]}"
-          } >> "$GITHUB_OUTPUT"
-          echo "Building ${PROVERS_IMAGE}:${{ matrix.arch }}_${PROVERS_BUILD_VER} with:"
-          printf '  %s\n' "${args[@]}"
-
-      - name: Build
-        # Docker's own builder rather than a buildx container, so the image lands in
-        # the store it is smoke-tested and pushed from instead of being exported into
-        # it, which would hold it on disk twice.
-        run: |
-          docker buildx build --platform linux/${{ matrix.arch }} \
-            -f provers-env/docker/Dockerfile.provers \
-            -t "${{ steps.pins.outputs.tag }}" \
-            ${{ steps.pins.outputs.build_args }} \
-            provers-env
-          df -h / /mnt 2>/dev/null || df -h /
-
-      - name: Smoke test
-        # the image's ENV puts the tools on PATH without a login shell
-        run: |
-          tag="${{ steps.pins.outputs.tag }}"
-          docker run --rm "${tag}" cat provers/build-info
-          docker run --rm "${tag}" verus --version
-          docker run --rm "${tag}" sireum --version
-          docker run --rm "${tag}" bash -c 'ls "${MICROKIT_SDK}/board"'
-
       - name: Log in to Docker Hub
         if: env.PUBLISH == 'true'
         uses: docker/login-action@v3
@@ -137,9 +89,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push
-        if: env.PUBLISH == 'true'
-        run: docker push "${{ steps.pins.outputs.tag }}"
+      - name: Build, smoke-test and (when publishing) push
+        # This runner's architecture only, built natively.  An empty override leaves
+        # versions.sh's pin in place.
+        env:
+          PROVERS_ARCHS: ${{ matrix.arch }}
+          PROVERS_PUSH: ${{ env.PUBLISH == 'true' && 'true' || 'false' }}
+          PROVERS_BUILD_VER: ${{ inputs.build_ver }}
+          PROVERS_IMAGE: ${{ inputs.image }}
+        run: |
+          bash provers-env/docker/docker.sh
+          df -h / /mnt 2>/dev/null || df -h /
 
   manifest:
     # Only after both architectures have pushed: the manifest names the two tags,
@@ -148,18 +108,17 @@ jobs:
     if: inputs.publish
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Publish the multi-arch manifest
+      - name: Publish the multi-arch manifests
         env:
-          IMAGE: ${{ needs.build.outputs.image }}
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          docker buildx imagetools create -t "${IMAGE}:${VERSION}" \
-            "${IMAGE}:arm64_${VERSION}" "${IMAGE}:amd64_${VERSION}"
-          docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${VERSION}"
-          docker buildx imagetools inspect "${IMAGE}:${VERSION}"
+          PROVERS_MANIFEST_ONLY: 'true'
+          PROVERS_BUILD_VER: ${{ inputs.build_ver }}
+          PROVERS_IMAGE: ${{ inputs.image }}
+        run: bash provers-env/docker/docker.sh

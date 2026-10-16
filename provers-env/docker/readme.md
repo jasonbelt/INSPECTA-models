@@ -102,28 +102,33 @@ bash docker.sh
 ```
 
 That builds both architectures in parallel, tags them `<image>:amd64_<version>`
-and `<image>:arm64_<version>`, and then offers to push and to publish a
+and `<image>:arm64_<version>`, smoke-tests each (`build-info`, `verus --version`,
+`sireum --version`, the SDK's boards), and then offers to push and to publish a
 multi-arch `:latest` manifest.  It answers `n` by default, so it is safe to run
-just to check the build.  Run without a terminal (from CI, `nohup`, or with stdin
-redirected) it stops at that prompt instead: `read` meets end-of-input and
-`set -e` ends the script with status 1, after `Both architecture-specific builds
-completed successfully.` and before anything is pushed.  Both images are left
-built locally.  To publish them afterwards, run the steps it would have run --
-push both architecture tags, then point the version and `:latest` at a manifest
-of the two:
+just to check the build.  Both images are left built locally either way.
+
+Without a terminal -- in CI, under `nohup`, with stdin redirected -- answer the
+prompt up front instead: `PROVERS_PUSH=true` pushes without asking and
+`PROVERS_PUSH=false` stops after the smoke test.  Left to the prompt, `read`
+meets end-of-input and the script ends with status 1 before anything is pushed.
+
+The two images need not be built on one machine.  `PROVERS_ARCHS` names the
+architectures a run builds, so each can be built natively -- amd64 on an x86_64
+host, arm64 on an aarch64 one -- rather than one of them under emulation.  A run
+that pushes only one architecture leaves the manifests alone; once both tags are
+pushed, from wherever they were built, publish the manifests by themselves:
 
 ```bash
-IMAGE=jasonbelt/microkit_provers VERSION=2026.10.13   # PROVERS_IMAGE, PROVERS_BUILD_VER
-docker push "${IMAGE}:arm64_${VERSION}"
-docker push "${IMAGE}:amd64_${VERSION}"
-docker buildx imagetools create -t "${IMAGE}:${VERSION}" \
-  "${IMAGE}:arm64_${VERSION}" "${IMAGE}:amd64_${VERSION}"
-docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${VERSION}"
+PROVERS_ARCHS=amd64 PROVERS_PUSH=true bash docker.sh   # on an x86_64 host
+PROVERS_ARCHS=arm64 PROVERS_PUSH=true bash docker.sh   # on an aarch64 host
+PROVERS_MANIFEST_ONLY=true bash docker.sh              # anywhere, once both are pushed
 ```
 
-The same steps publish two images built on different machines -- say amd64
-natively on an x86_64 host rather than emulated -- once each has pushed its own
-architecture tag: the manifest only names the two tags, wherever they were built.
+That is exactly what the `provers-env-docker` GitHub Actions workflow
+(`.github/workflows/provers-env-docker.yml`) runs: one native runner per
+architecture, then the manifests.  Start it from the Actions tab, with `publish`
+to push, or push a commit whose message contains `[docker]` to have it build and
+smoke-test without publishing.
 
 The version comes from `PROVERS_BUILD_VER` in
 [../bin/versions.sh](../bin/versions.sh) rather than from today's date, so a
@@ -139,10 +144,13 @@ Docker Desktop's default builder does, via QEMU emulation for the foreign one.
 Note that the emulated half is *much* slower, and on aarch64 the build compiles
 Z3 and Verus from source.
 
-Two knobs on the build itself:
+The knobs on the build itself:
 
 | | |
 | --- | --- |
+| `PROVERS_ARCHS=amd64` | build only the named architectures (`amd64`, `arm64`, or both, space-separated; both by default) |
+| `PROVERS_PUSH=true` / `false` | push without asking, or stop after the smoke test; unset, the script asks |
+| `PROVERS_MANIFEST_ONLY=true` | build nothing: point `<version>` and `:latest` at a manifest of the two architecture tags already pushed |
 | `PROVERS_BUILD_SEQUENTIAL=true` | build one architecture at a time.  Parallel is the default and halves the wall clock, but doubles the concurrent load on GitHub at the moments both builds fetch large artifacts, which is a good way to be throttled mid-build |
 | `PROVERS_EXPORT_BUILD_CACHE=true` | also export the layer cache to `.buildx-cache/`.  Off by default: `mode=max` writes every layer of both architectures on every build and nothing prunes it -- 58 GB after a day of iterating, enough to fill a disk.  BuildKit's own cache already makes local rebuilds fast; the export earns its keep in CI, where nothing survives between runs |
 
