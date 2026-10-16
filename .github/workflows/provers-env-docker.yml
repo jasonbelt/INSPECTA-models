@@ -6,11 +6,11 @@ name: provers-env-docker
 # on a single host.  It runs the same build docker.sh does: the image name, the tag
 # and every --build-arg come from provers-env/bin/versions.sh.
 #
-# Publishing is opt-in.  A push that touches provers-env/ only builds and smoke-tests
-# the images; a manual run with 'publish' set pushes <image>:<arch>_<version> for
-# both architectures and then points <image>:<version> and <image>:latest at a
-# multi-arch manifest of the two, as docker.sh does after its prompt.  Publishing
-# needs the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets.
+# It runs only when started by hand.  Without 'publish' it builds and smoke-tests the
+# images; with it, it also pushes <image>:<arch>_<version> for both architectures and
+# then points <image>:<version> and <image>:latest at a multi-arch manifest of the
+# two, as docker.sh does after its prompt.  Publishing needs the DOCKERHUB_USERNAME
+# and DOCKERHUB_TOKEN secrets.
 
 on:
   workflow_dispatch:
@@ -27,11 +27,6 @@ on:
         description: 'PROVERS_IMAGE override (default: the image versions.sh names)'
         type: string
         default: ''
-  push:
-    paths:
-      - 'provers-env/bin/**'
-      - 'provers-env/docker/**'
-      - '.github/workflows/provers-env-docker.yml'
 
 # a newer run on the same ref replaces one in progress: each build holds a runner for
 # an hour or more, and only the latest pins are worth building
@@ -40,7 +35,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
+  PUBLISH: ${{ inputs.publish }}
 
 jobs:
   build:
@@ -144,7 +139,7 @@ jobs:
     # Only after both architectures have pushed: the manifest names the two tags,
     # wherever they were built.
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    if: inputs.publish
     runs-on: ubuntu-24.04
     steps:
       - name: Log in to Docker Hub
