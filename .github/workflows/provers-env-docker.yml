@@ -6,8 +6,9 @@ name: provers-env-docker
 # on a single host.  It runs the same build docker.sh does: the image name, the tag
 # and every --build-arg come from provers-env/bin/versions.sh.
 #
-# It runs only when started by hand.  Without 'publish' it builds and smoke-tests the
-# images; with it, it also pushes <image>:<arch>_<version> for both architectures and
+# It runs when started by hand, or on a push one of whose commit messages contains
+# [docker].  Without 'publish' -- which a push never sets -- it builds and smoke-tests
+# the images; with it, it also pushes <image>:<arch>_<version> for both architectures and
 # then points <image>:<version> and <image>:latest at a multi-arch manifest of the
 # two, as docker.sh does after its prompt.  Publishing needs the DOCKERHUB_USERNAME
 # and DOCKERHUB_TOKEN secrets.
@@ -27,11 +28,15 @@ on:
         description: 'PROVERS_IMAGE override (default: the image versions.sh names)'
         type: string
         default: ''
+  # every push starts a run, but its jobs are skipped unless one of the pushed
+  # commits asks for a build (see 'if' on the build job)
+  push:
 
-# a newer run on the same ref replaces one in progress: each build holds a runner for
-# an hour or more, and only the latest pins are worth building
+# a newer build on the same ref replaces one in progress: each holds a runner for an
+# hour or more, and only the latest pins are worth building.  A push that does not ask
+# for a build gets a group of its own, so that it does not cancel one in progress.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'workflow_dispatch' || contains(join(github.event.commits.*.message, ' '), '[docker]')) && 'build' || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -40,6 +45,7 @@ env:
 jobs:
   build:
     name: build (${{ matrix.arch }})
+    if: github.event_name == 'workflow_dispatch' || contains(join(github.event.commits.*.message, ' '), '[docker]')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 360
     strategy:
