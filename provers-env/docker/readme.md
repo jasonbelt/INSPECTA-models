@@ -38,9 +38,11 @@ docker run -it --rm -v $(pwd):/home/microkit/provers/INSPECTA-models \
 
 `:latest` is a multi-arch manifest; docker picks the matching architecture.
 `:<YYYY.MM.DD>` pins a build, and `:amd64_<version>` / `:arm64_<version>` name
-the single-architecture images behind a manifest.  That version is
-`PROVERS_BUILD_VER` from [../bin/versions.sh](../bin/versions.sh), so an image
-and the VM built from the same pins carry the same one.  What is actually
+the single-architecture images behind a manifest.  That version is the day the
+images were built unless the build was given one (see [Building](#building)),
+so it is not necessarily the `PROVERS_BUILD_VER` an OVA from the same pins
+carries; `provers/build-info` inside an image records both its version and the
+tool versions.  What is actually
 published is listed on
 [Docker Hub](https://hub.docker.com/r/jasonbelt/microkit_provers/tags).
 
@@ -130,14 +132,22 @@ architecture, then the manifests.  Start it from the Actions tab, with `publish`
 to push, or push a commit whose message contains `[docker]` to have it build and
 smoke-test without publishing.
 
-The version comes from `PROVERS_BUILD_VER` in
-[../bin/versions.sh](../bin/versions.sh) rather than from today's date, so a
-rebuild that fixes a pin republishes over the build it replaces.  Publishing a
-genuinely new build means bumping it:
+The images are tagged with today's date unless a version is given, so each
+publish stands beside the earlier ones.  To *replace* a published build -- a
+rebuild that fixes a pin -- give its version instead, as an option or in the
+environment (the option wins):
 
 ```bash
-PROVERS_BUILD_VER=$(date +%Y.%m.%d) bash docker.sh
+bash docker.sh --build-ver 2026.10.13
+PROVERS_BUILD_VER=2026.10.13 bash docker.sh
 ```
+
+Run by hand without either, `docker.sh` asks before taking today's date, and
+answering `n` prints how to give one.  Without a terminal it stops rather than
+guess, unless it is CI (`CI=true`, as GitHub Actions sets), which takes the date.
+The workflow's `build_ver` input is the same option.  The `PROVERS_BUILD_VER`
+pinned in [../bin/versions.sh](../bin/versions.sh) names the VM and the OVA; the
+container does not use it.
 
 Requires `docker buildx` with a builder that can produce both platforms --
 Docker Desktop's default builder does, via QEMU emulation for the foreign one.

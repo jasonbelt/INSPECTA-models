@@ -365,9 +365,11 @@ than one architecture: VirtualBox refuses a duplicate name, and the name is what
 an exported appliance inherits.
 
 The build version is `PROVERS_BUILD_VER` from
-[bin/versions.sh](../bin/versions.sh) -- the same one the container tags and the
-OVA carry.  Vagrant re-applies the configured name on every `vagrant up`, so
-a VM is renamed when the pin changes; look a registered VM up with
+[bin/versions.sh](../bin/versions.sh) -- the same one the OVA carries.  (The
+container images are tagged with the day they were built unless given a version;
+see [../docker/readme.md](../docker/readme.md#building).)  Vagrant re-applies
+the configured name on every `vagrant up`, so a VM is renamed when the pin
+changes; look a registered VM up with
 `VBoxManage list vms` rather than assuming.  Appliances are unaffected either
 way; see [Exporting An OVA](#exporting-an-ova).
 
@@ -504,12 +506,12 @@ The name it chooses is `provers-env-<arch>-<build version>`, e.g.
 the OVA's filename and what VirtualBox calls the VM on import.
 
 The build version is `PROVERS_BUILD_VER`, pinned in
-[bin/versions.sh](../bin/versions.sh) and recorded in `build-info`, so the OVA,
-the VM it came from and the container image built from the same pins all carry
-it.  That also means a rebuild meant to *replace* a published build keeps its
-version rather than taking today's date -- set `PROVERS_BUILD_VER` to a new date
-when publishing a genuinely new build.  `PROVERS_OVA_DATE=YYYY.MM.DD` overrides
-it for one export, and `PROVERS_OVA_NAME` replaces the whole name.
+[bin/versions.sh](../bin/versions.sh) and recorded in `build-info`, so the OVA
+and the VM it came from carry it.  That also means a rebuild meant to *replace*
+a published build keeps its version rather than taking today's date -- set
+`PROVERS_BUILD_VER` to a new date when publishing a genuinely new build.
+`PROVERS_OVA_DATE=YYYY.MM.DD` overrides it for one export, and
+`PROVERS_OVA_NAME` replaces the whole name.
 
 Set `TZ` to the building host's zone, as above.  It matters only for an
 appliance exported from a VM built before that pin existed, where the name falls

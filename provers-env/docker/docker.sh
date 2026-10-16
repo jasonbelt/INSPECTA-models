@@ -5,6 +5,40 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 CACHE_DIR=${SCRIPT_DIR}/.buildx-cache
 
+usage() {
+  cat <<USAGE
+Usage: bash docker.sh [--build-ver <version>]
+
+  --build-ver <version>  the version the images are tagged with
+                         (<image>:<arch>_<version>, <image>:<version>);
+                         PROVERS_BUILD_VER sets it too.  Without either it is
+                         today's date, which an interactive run asks to confirm.
+
+Environment: PROVERS_ARCHS, PROVERS_PUSH, PROVERS_MANIFEST_ONLY,
+PROVERS_BUILD_SEQUENTIAL, PROVERS_EXPORT_BUILD_CACHE, PROVERS_IMAGE and the
+tool pins in ../bin/versions.sh -- see readme.md.
+USAGE
+}
+
+BUILD_VER_OPT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --build-ver)
+      if [ $# -lt 2 ] || [ -z "$2" ]; then
+        echo "ERROR: --build-ver needs a version." >&2; exit 1
+      fi
+      BUILD_VER_OPT=$2; shift 2 ;;
+    --build-ver=*) BUILD_VER_OPT=${1#*=}; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "ERROR: unknown argument '$1'." >&2; usage >&2; exit 1 ;;
+  esac
+done
+
+# The version the images are tagged with: --build-ver, else PROVERS_BUILD_VER from
+# the environment.  Read before versions.sh is sourced, since that file pins a
+# PROVERS_BUILD_VER of its own for the VM, which the container does not use.
+GIVEN_BUILD_VER=${BUILD_VER_OPT:-${PROVERS_BUILD_VER:-}}
+
 # The image name and the tool versions come from the same file the VM and the
 # bare-metal setup use, so the image and the VM install the same things.
 # Override PROVERS_IMAGE to build and push somewhere else.
@@ -13,11 +47,56 @@ source "${SCRIPT_DIR}/../bin/versions.sh"
 
 IMAGE=${PROVERS_IMAGE}
 
-# The tag suffix, pinned in versions.sh rather than taken from today's clock, so
-# that the container and the VM built from the same pins carry the same version
-# -- and so that a rebuild meant to replace a published build tags over it rather
-# than beside it.  PROVERS_BUILD_VER=$(date +%Y.%m.%d) for a new one.
-VERSION=${PROVERS_BUILD_VER}
+# Without a version given, the images are tagged with today's date, so that each
+# publish stands beside the earlier ones.  Run by hand, that is confirmed first:
+# re-using a version is how a rebuild replaces a published build rather than
+# standing beside it, and is easy to get wrong in either direction.  CI (CI=true,
+# as GitHub Actions sets it) takes the date without asking.
+how_to_set_version() {
+  cat >&2 <<HOWTO
+To tag the images with a version of your choosing, run either of:
+
+  bash ${BASH_SOURCE[0]} --build-ver $1
+  PROVERS_BUILD_VER=$1 bash ${BASH_SOURCE[0]}
+
+Re-using a published version replaces those images; a new one stands beside them.
+HOWTO
+}
+
+if [ -n "${GIVEN_BUILD_VER}" ]; then
+  VERSION=${GIVEN_BUILD_VER}
+else
+  VERSION=$(date +%Y.%m.%d)
+  if [ "${CI:-}" != "true" ]; then
+    if [ ! -t 0 ]; then
+      echo "ERROR: no build version given, and no terminal to confirm today's date (${VERSION}) on." >&2
+      how_to_set_version "${VERSION}"
+      exit 1
+    fi
+    read -r -p "No build version given.  Tag the images ${IMAGE}:<arch>_${VERSION}? [y/N] " answer
+    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+      how_to_set_version "${VERSION}"
+      exit 1
+    fi
+  fi
+fi
+
+# a Docker tag may hold letters, digits, '_', '.' and '-' (and starts with neither
+# '.' nor '-'); <arch>_ goes in front of it, so 122 characters are left
+if [[ ! "${VERSION}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,121}$ ]]; then
+  echo "ERROR: '${VERSION}' cannot be part of a Docker tag." >&2
+  exit 1
+fi
+
+# what the images record of themselves (build-info, the image's version label)
+export PROVERS_BUILD_VER=${VERSION}
+echo "Build version: ${VERSION}"
+
+# CI passes the version on to the job that publishes the manifests, so that it
+# names the same tags the builds pushed even if the date has moved on since.
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+fi
 
 # Only the architecture-independent pins are forwarded.  versions.sh also derives
 # per-architecture values, but from the *host's* uname, which would be wrong for

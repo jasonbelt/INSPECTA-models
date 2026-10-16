@@ -13,14 +13,15 @@
 #
 # This file is meant to be sourced, not executed.
 
-# The version suffix a build carries: the container tags (<image>:<arch>_<ver>
-# and the multi-arch <image>:<ver>), the VirtualBox machine name and the OVA name
-# all come from this.  It is a date, and it is pinned rather than taken from the
-# clock so that a rebuild can deliberately *replace* a published build instead of
-# standing beside it -- which is what a fix to the pins above usually means.  Set
-# it to today's date when publishing a genuinely new build:
+# The version suffix a VM build carries: the VirtualBox machine name and the OVA
+# name come from this.  (docker/docker.sh tags the container images with today's
+# date instead, unless given --build-ver or PROVERS_BUILD_VER.)  It is a date,
+# and it is pinned rather than taken from the clock so that a rebuild can
+# deliberately *replace* a published build instead of standing beside it -- which
+# is what a fix to the pins above usually means.  Set it to today's date when
+# publishing a genuinely new build:
 #
-#   PROVERS_BUILD_VER=$(date +%Y.%m.%d) bash docker/docker.sh
+#   PROVERS_BUILD_VER=$(date +%Y.%m.%d) bash vagrant/setup.sh
 #
 : "${PROVERS_BUILD_VER:=2026.10.13}"
 

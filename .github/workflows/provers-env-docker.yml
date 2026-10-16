@@ -20,7 +20,7 @@ on:
         type: boolean
         default: false
       build_ver:
-        description: 'PROVERS_BUILD_VER override (default: the pin in versions.sh)'
+        description: 'Build version to tag the images with (default: the run''s date, YYYY.MM.DD)'
         type: string
         default: ''
       image:
@@ -58,6 +58,9 @@ jobs:
             runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
+    # the version docker.sh tagged the images with, which the manifest job publishes
+    outputs:
+      version: ${{ steps.docker.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -69,8 +72,9 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build, smoke-test and (when publishing) push
-        # This runner's architecture only, built natively.  An empty override leaves
-        # versions.sh's pin in place.
+        id: docker
+        # This runner's architecture only, built natively.  Without build_ver,
+        # docker.sh tags the images with today's date.
         env:
           PROVERS_ARCHS: ${{ matrix.arch }}
           PROVERS_PUSH: ${{ env.PUBLISH == 'true' && 'true' || 'false' }}
@@ -98,6 +102,7 @@ jobs:
       - name: Publish the multi-arch manifests
         env:
           PROVERS_MANIFEST_ONLY: 'true'
-          PROVERS_BUILD_VER: ${{ inputs.build_ver }}
+          # what the builds tagged, even if the date has moved on since
+          PROVERS_BUILD_VER: ${{ needs.build.outputs.version }}
           PROVERS_IMAGE: ${{ inputs.image }}
         run: bash provers-env/docker/docker.sh

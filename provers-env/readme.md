@@ -49,12 +49,13 @@ the container build sources it too and passes each value as `--build-arg`, so
 neither carries a second copy.  Every pin can be overridden by exporting it
 before running a setup.
 
-It also pins `PROVERS_BUILD_VER`, the version a build carries -- the container
-tags, the VirtualBox machine name and the OVA name all come from it, so the
-three delivery paths built from one set of pins identify themselves the same
-way.  It is a date, but a pinned one: a rebuild that fixes a pin republishes
-over the build it replaces rather than standing beside it.  Bump it when
-publishing a genuinely new build.
+It also pins `PROVERS_BUILD_VER`, the version a VM build carries -- the
+VirtualBox machine name and the OVA name come from it.  It is a date, but a
+pinned one: a rebuild that fixes a pin republishes over the build it replaces
+rather than standing beside it.  Bump it when publishing a genuinely new build.
+The container is versioned on its own: `docker/docker.sh` tags the images with
+today's date unless given a version (`--build-ver`, or `PROVERS_BUILD_VER` in
+the environment), and asks before taking the date when run by hand.
 
 **One set of install steps.** Every delivery path runs `bin/`.  They differ only
 in the flags they pass -- `PROVERS_DEPS_PROFILE`, `PROVERS_SIREUM_PROFILE`, the
